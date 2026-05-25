@@ -496,6 +496,63 @@ SERVER_INFO = {
                     }
                 }
             }
+        },
+        {
+            "name": "create_timesheet",
+            "description": "Create a new timesheet entry. Two modes: 'regular' (clock-in/out with start+end datetimes) or 'manual' (date + duration in seconds). Requires user_id + jobcode_id + type.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["user_id", "jobcode_id", "type"],
+                "properties": {
+                    "user_id": {"type": "number", "description": "User the timesheet is for (use get_current_user.id for yourself)"},
+                    "jobcode_id": {"type": "number", "description": "Jobcode the time is against (from get_jobcodes)"},
+                    "type": {"type": "string", "enum": ["regular", "manual"], "description": "regular = start/end pair; manual = date+duration"},
+                    "start": {"type": "string", "description": "ISO 8601 start datetime (required for type=regular)"},
+                    "end": {"type": "string", "description": "ISO 8601 end datetime (required for type=regular)"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD date (required for type=manual)"},
+                    "duration": {"type": "number", "description": "Duration in seconds (required for type=manual)"},
+                    "notes": {"type": "string", "description": "Notes attached to the entry"},
+                    "customfields": {"type": "object", "description": "Custom field values, keyed by custom field ID"},
+                    "entries": {
+                        "type": "array",
+                        "description": "Batch mode: pass an array of entries with the same shape. Overrides the top-level fields.",
+                        "items": {"type": "object"}
+                    }
+                }
+            }
+        },
+        {
+            "name": "update_timesheet",
+            "description": "Update an existing timesheet by ID. Pass `id` plus the fields to change (e.g. duration, notes, end, jobcode_id).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "number", "description": "Timesheet ID to update"},
+                    "duration": {"type": "number"},
+                    "start": {"type": "string"},
+                    "end": {"type": "string"},
+                    "date": {"type": "string"},
+                    "jobcode_id": {"type": "number"},
+                    "notes": {"type": "string"},
+                    "customfields": {"type": "object"},
+                    "entries": {
+                        "type": "array",
+                        "description": "Batch mode: array of {id, ...changes}",
+                        "items": {"type": "object"}
+                    }
+                }
+            }
+        },
+        {
+            "name": "delete_timesheet",
+            "description": "Delete one or more timesheets by ID. Pass `id` (single) or `ids` (array). Destructive — the agent should confirm with the user before calling.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "number", "description": "Single timesheet ID"},
+                    "ids": {"type": "array", "items": {"type": "number"}, "description": "Array of timesheet IDs"}
+                }
+            }
         }
     ]
 }
@@ -606,7 +663,10 @@ class JSONRPCServer:
             'get_current_totals': self.api.get_current_totals,
             'get_payroll': self.api.get_payroll,
             'get_payroll_by_jobcode': self.api.get_payroll_by_jobcode,
-            'get_project_report': self.api.get_project_report
+            'get_project_report': self.api.get_project_report,
+            'create_timesheet': self.api.create_timesheet,
+            'update_timesheet': self.api.update_timesheet,
+            'delete_timesheet': self.api.delete_timesheet
         }
 
         if name not in method_map:

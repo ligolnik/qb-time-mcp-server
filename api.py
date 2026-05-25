@@ -99,6 +99,10 @@ class BaseAPI:
                 response = requests.get(url, headers=self.headers, params=params)
             elif method.upper() == 'POST':
                 response = requests.post(url, headers=self.headers, json=data)
+            elif method.upper() == 'PUT':
+                response = requests.put(url, headers=self.headers, json=data)
+            elif method.upper() == 'DELETE':
+                response = requests.delete(url, headers=self.headers, params=params)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
                 
@@ -654,8 +658,61 @@ class TimesheetAPI(BaseAPI):
                 if params['supplemental_data'] not in self.VALID_SUPPLEMENTAL_DATA:
                     raise ValueError("supplemental_data must be one of: yes, no")
                 clean_params['supplemental_data'] = params['supplemental_data']
-        
+
         return self.make_request('timesheets', params=clean_params)
+
+    # ─── Mutations (local fork) ──────────────────────────────────────────
+    # QB Time API expects mutations wrapped in {"data": [...]} so multiple
+    # entries can be created/updated in one round-trip. The MCP exposes
+    # single-entry create/update for simplicity; pass `entries` to do a batch.
+
+    def create_timesheet(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one or more timesheet entries.
+
+        For a single entry, pass the fields directly. For a batch, pass
+        `entries: [...]` and the contents go through verbatim.
+
+        Required for type=regular: user_id, jobcode_id, type='regular',
+        start (ISO 8601), end (ISO 8601).
+        Required for type=manual: user_id, jobcode_id, type='manual',
+        date (YYYY-MM-DD), duration (seconds).
+        Optional: notes, customfields, attached_files.
+        """
+        if 'entries' in params:
+            entries = params['entries']
+        else:
+            # Single-entry mode: everything except `entries` itself
+            entries = [{k: v for k, v in params.items() if k != 'entries'}]
+        return self.make_request('timesheets', method='POST', data={'data': entries})
+
+    def update_timesheet(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update one or more timesheets. Each entry must have an `id`.
+
+        Pass `entries: [{id: ..., duration: ..., notes: ...}, ...]` for
+        a batch, or pass the fields directly (including `id`) for one.
+        """
+        if 'entries' in params:
+            entries = params['entries']
+        else:
+            entries = [{k: v for k, v in params.items() if k != 'entries'}]
+        for e in entries:
+            if 'id' not in e:
+                raise ValueError("update_timesheet: each entry needs an `id`")
+        return self.make_request('timesheets', method='PUT', data={'data': entries})
+
+    def delete_timesheet(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete one or more timesheets by ID.
+
+        Pass `id: <int>` for one, or `ids: [<int>, ...]` for a batch.
+        """
+        if 'ids' in params:
+            ids = params['ids']
+        elif 'id' in params:
+            ids = [params['id']]
+        else:
+            raise ValueError("delete_timesheet: pass `id` or `ids`")
+        ids_str = ','.join(str(i) for i in ids)
+        return self.make_request('timesheets', method='DELETE', params={'ids': ids_str})
 
 class UserAPI(BaseAPI):
     def get_users(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1763,6 +1820,15 @@ class QuickBooksTimeAPI(BaseAPI):
 
     def get_current_timesheets(self, params: Optional[Dict[str, Any]] = None):
         return self.timesheet_api.get_current_timesheets(params)
+
+    def create_timesheet(self, params: Dict[str, Any]):
+        return self.timesheet_api.create_timesheet(params)
+
+    def update_timesheet(self, params: Dict[str, Any]):
+        return self.timesheet_api.update_timesheet(params)
+
+    def delete_timesheet(self, params: Dict[str, Any]):
+        return self.timesheet_api.delete_timesheet(params)
 
     def get_users(self, params: Optional[Dict[str, Any]] = None):
         return self.user_api.get_users(params)
